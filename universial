@@ -1,0 +1,626 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
+local LocalPlayer = Players.LocalPlayer
+
+
+
+-- ══════════════════════════════════════════════════
+--  INTERNAL STATE
+-- ══════════════════════════════════════════════════
+
+local toggleStates = {}
+local sliderValues = { ["Fly Speed"] = 100, ["Spin Speed"] = 10, ["Hitbox Size"] = 10 }
+local flying = false
+local flyBV, flyBG = nil, nil
+
+local function notify(title, content, icon, duration)
+    WindUI:Notify({
+        Title = title,
+        Content = content or "",
+        Icon = icon or "info",
+        Duration = duration or 3,
+    })
+end
+
+-- ══════════════════════════════════════════════════
+--  FLY
+-- ══════════════════════════════════════════════════
+
+local function startFly()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    flying = true
+    flyBV = Instance.new("BodyVelocity", char.HumanoidRootPart)
+    flyBV.MaxForce = Vector3.new(1e6, 1e6, 1e6); flyBV.Velocity = Vector3.zero
+    flyBG = Instance.new("BodyGyro", char.HumanoidRootPart)
+    flyBG.MaxTorque = Vector3.new(1e6, 1e6, 1e6); flyBG.D = 200; flyBG.P = 1e4
+    spawn(function()
+        while flying and flyBV and flyBV.Parent do
+            local cam = workspace.CurrentCamera; local dir = Vector3.zero
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - cam.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + cam.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.yAxis end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then dir = dir - Vector3.yAxis end
+            if dir.Magnitude > 0 then dir = dir.Unit end
+            flyBV.Velocity = dir * (sliderValues["Fly Speed"] or 100)
+            flyBG.CFrame = cam.CFrame; RunService.RenderStepped:Wait()
+        end
+    end)
+end
+
+local function stopFly()
+    flying = false
+    if flyBV then flyBV:Destroy(); flyBV = nil end
+    if flyBG then flyBG:Destroy(); flyBG = nil end
+end
+
+-- ══════════════════════════════════════════════════
+--  TAB: PLAYER
+-- ══════════════════════════════════════════════════
+
+local PlayerTab = Window:Tab({ Title = "Player", Icon = "person-standing" })
+
+PlayerTab:Paragraph({ Title = "Movement", Desc = "Speed and jump controls" })
+
+PlayerTab:Slider({
+    Title = "WalkSpeed",
+    Value = { Min = 16, Max = 500, Default = 16 },
+    Callback = function(v)
+        sliderValues["WalkSpeed"] = v
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            char:FindFirstChildOfClass("Humanoid").WalkSpeed = v
+        end
+    end
+})
+
+PlayerTab:Slider({
+    Title = "JumpPower",
+    Value = { Min = 50, Max = 500, Default = 50 },
+    Callback = function(v)
+        sliderValues["JumpPower"] = v
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            char:FindFirstChildOfClass("Humanoid").JumpPower = v
+            char:FindFirstChildOfClass("Humanoid").UseJumpPower = true
+        end
+    end
+})
+
+PlayerTab:Toggle({
+    Title = "Infinite Jump",
+    Callback = function(state) toggleStates["Infinite Jump"] = state end
+})
+
+PlayerTab:Toggle({
+    Title = "Noclip",
+    Callback = function(state) toggleStates["Noclip"] = state end
+})
+
+PlayerTab:Divider()
+PlayerTab:Paragraph({ Title = "Flight", Desc = "Fly through the map" })
+
+PlayerTab:Toggle({
+    Title = "Fly",
+    Callback = function(state) toggleStates["Fly"] = state end
+})
+
+PlayerTab:Slider({
+    Title = "Fly Speed",
+    Value = { Min = 50, Max = 500, Default = 100 },
+    Callback = function(v) sliderValues["Fly Speed"] = v end
+})
+
+PlayerTab:Divider()
+PlayerTab:Paragraph({ Title = "Character", Desc = "Misc character controls" })
+
+PlayerTab:Slider({
+    Title = "Gravity",
+    Value = { Min = 0, Max = 400, Default = 196 },
+    Callback = function(v) workspace.Gravity = v end
+})
+
+PlayerTab:Button({
+    Title = "Reset Character",
+    Callback = function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            char:FindFirstChildOfClass("Humanoid").Health = 0
+        end
+    end
+})
+
+PlayerTab:Button({
+    Title = "Freeze / Unfreeze",
+    Callback = function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.Anchored = not char.HumanoidRootPart.Anchored
+        end
+    end
+})
+
+-- ══════════════════════════════════════════════════
+--  TAB: VISUAL
+-- ══════════════════════════════════════════════════
+
+local VisualTab = Window:Tab({ Title = "Visual", Icon = "eye" })
+
+VisualTab:Paragraph({ Title = "ESP System", Desc = "Player outlines and labels" })
+
+VisualTab:Toggle({
+    Title = "Player ESP",
+    Callback = function(state) toggleStates["Player ESP"] = state end
+})
+
+VisualTab:Toggle({
+    Title = "ESP Names",
+    Callback = function(state) toggleStates["ESP Names"] = state end
+})
+
+VisualTab:Toggle({
+    Title = "ESP Distance",
+    Callback = function(state) toggleStates["ESP Distance"] = state end
+})
+
+VisualTab:Toggle({
+    Title = "ESP Health Color",
+    Callback = function(state) toggleStates["ESP Health Color"] = state end
+})
+
+VisualTab:Divider()
+VisualTab:Paragraph({ Title = "World", Desc = "Lighting and camera tweaks" })
+
+VisualTab:Toggle({
+    Title = "Fullbright",
+    Callback = function(s)
+        toggleStates["Fullbright"] = s
+        if s then
+            Lighting.Brightness = 3; Lighting.ClockTime = 14
+            Lighting.FogEnd = 1e6; Lighting.GlobalShadows = false
+            for _, v in pairs(Lighting:GetChildren()) do
+                if v:IsA("Atmosphere") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("ColorCorrectionEffect") then
+                    v.Enabled = false
+                end
+            end
+        else
+            Lighting.Brightness = 1; Lighting.GlobalShadows = true
+            for _, v in pairs(Lighting:GetChildren()) do
+                if v:IsA("Atmosphere") or v:IsA("BloomEffect") or v:IsA("BlurEffect") or v:IsA("ColorCorrectionEffect") then
+                    v.Enabled = true
+                end
+            end
+        end
+    end
+})
+
+VisualTab:Slider({
+    Title = "FOV",
+    Value = { Min = 30, Max = 120, Default = 70 },
+    Callback = function(v) workspace.CurrentCamera.FieldOfView = v end
+})
+
+-- ══════════════════════════════════════════════════
+--  TAB: TELEPORT
+-- ══════════════════════════════════════════════════
+
+local TeleportTab = Window:Tab({ Title = "Teleport", Icon = "map-pin" })
+
+TeleportTab:Paragraph({ Title = "Quick Teleport", Desc = "Fast travel options" })
+
+TeleportTab:Button({
+    Title = "TP to Nearest Player",
+    Callback = function()
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        local best, bestD = nil, math.huge
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                local d = (p.Character.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude
+                if d < bestD then best, bestD = p, d end
+            end
+        end
+        if best then
+            char.HumanoidRootPart.CFrame = best.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 4)
+            notify("Teleport", "Teleported to " .. best.Name .. "!", "map-pin", 2)
+        end
+    end
+})
+
+TeleportTab:Toggle({
+    Title = "Click TP",
+    Callback = function(state) toggleStates["Click TP"] = state end
+})
+
+TeleportTab:Divider()
+TeleportTab:Paragraph({ Title = "Coordinate TP", Desc = "Preset map locations" })
+
+TeleportTab:Button({
+    Title = "Map Center (0, 150, 0)",
+    Callback = function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.CFrame = CFrame.new(0, 150, 0)
+        end
+    end
+})
+
+TeleportTab:Button({
+    Title = "Highest Point (0, 1000, 0)",
+    Callback = function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.CFrame = CFrame.new(0, 1000, 0)
+        end
+    end
+})
+
+TeleportTab:Button({
+    Title = "Spawn Point",
+    Callback = function()
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local spawn = workspace:FindFirstChild("SpawnLocation") or workspace:FindFirstChildOfClass("SpawnLocation")
+            if spawn then
+                char.HumanoidRootPart.CFrame = spawn.CFrame + Vector3.new(0, 5, 0)
+            else
+                char.HumanoidRootPart.CFrame = CFrame.new(0, 50, 0)
+            end
+            notify("Teleport", "Teleported to spawn!", "home", 2)
+        end
+    end
+})
+
+TeleportTab:Divider()
+TeleportTab:Paragraph({ Title = "Player List", Desc = "Click a player to teleport to them" })
+
+local playerDropdown = TeleportTab:Dropdown({
+    Title = "Select Player",
+    Values = {},
+    Value = nil,
+    Callback = function(selectedName)
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Name == selectedName and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.CFrame = p.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 4)
+                notify("Teleport", "Teleported to " .. p.Name .. "!", "map-pin", 2)
+                break
+            end
+        end
+    end
+})
+
+local function refreshPlayerDropdown()
+    local names = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then table.insert(names, p.Name) end
+    end
+    playerDropdown:Refresh(names)
+end
+
+refreshPlayerDropdown()
+Players.PlayerAdded:Connect(function(p)
+    task.wait(1); refreshPlayerDropdown()
+    notify("Server", p.DisplayName .. " joined!", "user-plus", 2)
+end)
+Players.PlayerRemoving:Connect(function(p)
+    refreshPlayerDropdown()
+    notify("Server", p.DisplayName .. " left!", "user-minus", 2)
+end)
+
+-- ══════════════════════════════════════════════════
+--  TAB: COMBAT
+-- ══════════════════════════════════════════════════
+
+local CombatTab = Window:Tab({ Title = "Combat", Icon = "sword" })
+
+CombatTab:Paragraph({ Title = "Combat Tools", Desc = "Movement-based combat aids" })
+
+CombatTab:Toggle({
+    Title = "Auto Jump",
+    Callback = function(state) toggleStates["Auto Jump"] = state end
+})
+
+CombatTab:Toggle({
+    Title = "Spin Bot",
+    Callback = function(state) toggleStates["Spin Bot"] = state end
+})
+
+CombatTab:Slider({
+    Title = "Spin Speed",
+    Value = { Min = 1, Max = 50, Default = 10 },
+    Callback = function(v) sliderValues["Spin Speed"] = v end
+})
+
+CombatTab:Divider()
+CombatTab:Paragraph({ Title = "Hitbox", Desc = "Expand enemy hitboxes" })
+
+CombatTab:Toggle({
+    Title = "Hitbox Expander",
+    Callback = function(state) toggleStates["Hitbox Expander"] = state end
+})
+
+CombatTab:Slider({
+    Title = "Hitbox Size",
+    Value = { Min = 5, Max = 50, Default = 10 },
+    Callback = function(v) sliderValues["Hitbox Size"] = v end
+})
+
+-- ══════════════════════════════════════════════════
+--  TAB: MISC
+-- ══════════════════════════════════════════════════
+
+local MiscTab = Window:Tab({ Title = "Misc", Icon = "settings" })
+
+MiscTab:Paragraph({ Title = "Utility", Desc = "General tools" })
+
+MiscTab:Toggle({
+    Title = "Anti AFK",
+    Callback = function(s)
+        toggleStates["Anti AFK"] = s
+        if s then
+            spawn(function()
+                local VU = game:GetService("VirtualUser")
+                while toggleStates["Anti AFK"] do
+                    pcall(function() VU:CaptureController(); VU:ClickButton2(Vector2.new()) end)
+                    wait(60)
+                end
+            end)
+        end
+    end
+})
+
+MiscTab:Toggle({
+    Title = "Show FPS",
+    Callback = function(state) toggleStates["Show FPS"] = state end
+})
+
+MiscTab:Divider()
+MiscTab:Paragraph({ Title = "Server", Desc = "Session management" })
+
+MiscTab:Button({
+    Title = "Rejoin",
+    Callback = function()
+        game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+    end
+})
+
+MiscTab:Button({
+    Title = "Server Hop",
+    Callback = function()
+        pcall(function()
+            local data = HttpService:JSONDecode(game:HttpGetAsync(
+                "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+            ))
+            if data and data.data then
+                for _, sv in pairs(data.data) do
+                    if sv.id ~= game.JobId and sv.playing < sv.maxPlayers then
+                        game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, sv.id, LocalPlayer)
+                        break
+                    end
+                end
+            end
+        end)
+    end
+})
+
+MiscTab:Button({
+    Title = "Copy Game ID",
+    Callback = function()
+        if setclipboard then setclipboard(tostring(game.PlaceId)) end
+        notify("Copied", "Game ID: " .. game.PlaceId, "clipboard", 2)
+    end
+})
+
+MiscTab:Button({
+    Title = "Copy Server ID",
+    Callback = function()
+        if setclipboard then setclipboard(game.JobId) end
+        notify("Copied", "Server ID copied!", "clipboard", 2)
+    end
+})
+
+-- ══════════════════════════════════════════════════
+--  TAB: SETTINGS
+-- ══════════════════════════════════════════════════
+
+local SettingsTab = Window:Tab({ Title = "Settings", Icon = "sliders-horizontal" })
+
+SettingsTab:Paragraph({ Title = "UI Settings", Desc = "Customise ShadowHub" })
+
+SettingsTab:Dropdown({
+    Title = "Theme",
+    Values = { "Dark", "Rose", "Plant", "Red", "Indigo", "Sky", "Violet", "Amber", "Emerald", "Midnight" },
+    Callback = function(selected) WindUI:SetTheme(selected) end
+})
+
+SettingsTab:Slider({
+    Title = "Background Transparency",
+    Step = 0.01,
+    Value = { Min = 0, Max = 1, Default = 0.42 },
+    Callback = function(v) Window:SetBackgroundTransparency(v) end
+})
+
+SettingsTab:Keybind({
+    Title = "Toggle UI",
+    Value = "Insert",
+    Callback = function(v)
+        Window:SetToggleKey(Enum.KeyCode[v])
+    end
+})
+
+SettingsTab:Divider()
+
+SettingsTab:Button({
+    Title = "Unload Hub",
+    Callback = function() Window:Destroy() end
+})
+
+-- ══════════════════════════════════════════════════
+--  MAIN ENGINE
+-- ══════════════════════════════════════════════════
+
+RunService.Stepped:Connect(function()
+    if toggleStates["Noclip"] then
+        local char = LocalPlayer.Character
+        if char then
+            for _, p in pairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then p.CanCollide = false end
+            end
+        end
+    end
+end)
+
+UserInputService.JumpRequest:Connect(function()
+    if toggleStates["Infinite Jump"] then
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if toggleStates["Auto Jump"] then
+        local char = LocalPlayer.Character
+        if char then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Jump = true end
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if toggleStates["Spin Bot"] then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.CFrame = char.HumanoidRootPart.CFrame
+                * CFrame.Angles(0, math.rad(sliderValues["Spin Speed"] or 10), 0)
+        end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if toggleStates["Fly"] and not flying then startFly()
+    elseif not toggleStates["Fly"] and flying then stopFly() end
+end)
+
+local mouse = LocalPlayer:GetMouse()
+mouse.Button1Down:Connect(function()
+    if toggleStates["Click TP"] then
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") and mouse.Hit then
+            char.HumanoidRootPart.CFrame = mouse.Hit + Vector3.new(0, 4, 0)
+        end
+    end
+end)
+
+RunService.RenderStepped:Connect(function()
+    if toggleStates["Hitbox Expander"] then
+        local size = sliderValues["Hitbox Size"] or 10
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                p.Character.HumanoidRootPart.Size = Vector3.new(size, size, size)
+                p.Character.HumanoidRootPart.Transparency = 0.8
+            end
+        end
+    else
+        for _, p in pairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                p.Character.HumanoidRootPart.Size = Vector3.new(2, 2, 1)
+                p.Character.HumanoidRootPart.Transparency = 1
+            end
+        end
+    end
+end)
+
+-- ══════════════════════════════════════════════════
+--  ESP
+-- ══════════════════════════════════════════════════
+
+local espHolder = Instance.new("Folder")
+espHolder.Name = "ESP"
+espHolder.Parent = LocalPlayer.PlayerGui
+local espCache = {}
+
+local function makeESP(player)
+    if player == LocalPlayer then return end
+    local folder = Instance.new("Folder", espHolder); folder.Name = player.Name
+    local bb = Instance.new("BillboardGui", folder)
+    bb.Size = UDim2.new(0, 200, 0, 50); bb.StudsOffset = Vector3.new(0, 3.5, 0); bb.AlwaysOnTop = true
+    local nameL = Instance.new("TextLabel", bb); nameL.Size = UDim2.new(1, 0, 0.5, 0)
+    nameL.BackgroundTransparency = 1; nameL.TextColor3 = Color3.fromRGB(255, 120, 255)
+    nameL.Font = Enum.Font.GothamBold; nameL.TextSize = 14; nameL.TextStrokeTransparency = 0.4
+    nameL.Text = player.DisplayName
+    local distL = Instance.new("TextLabel", bb); distL.Size = UDim2.new(1, 0, 0.5, 0)
+    distL.Position = UDim2.new(0, 0, 0.5, 0); distL.BackgroundTransparency = 1
+    distL.TextColor3 = Color3.fromRGB(200, 200, 255); distL.Font = Enum.Font.Gotham; distL.TextSize = 12
+    local hl = Instance.new("Highlight", folder)
+    hl.FillTransparency = 0.7; hl.OutlineTransparency = 0.1
+    hl.OutlineColor = Color3.fromRGB(180, 100, 255); hl.FillColor = Color3.fromRGB(130, 60, 255)
+    espCache[player] = { folder = folder, bb = bb, nameL = nameL, distL = distL, hl = hl }
+end
+
+RunService.RenderStepped:Connect(function()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if not espCache[player] then makeESP(player) end
+        local e = espCache[player]; local show = toggleStates["Player ESP"]
+        local char = player.Character
+        if show and char and char:FindFirstChild("HumanoidRootPart") then
+            e.bb.Adornee = char:FindFirstChild("Head") or char.HumanoidRootPart
+            e.bb.Enabled = true; e.hl.Adornee = char; e.hl.Enabled = true
+            e.nameL.Visible = (toggleStates["ESP Names"] ~= false)
+            if toggleStates["ESP Distance"] then
+                local myC = LocalPlayer.Character
+                if myC and myC:FindFirstChild("HumanoidRootPart") then
+                    e.distL.Text = math.floor((myC.HumanoidRootPart.Position - char.HumanoidRootPart.Position).Magnitude) .. " studs"
+                    e.distL.Visible = true
+                end
+            else e.distL.Visible = false end
+            if toggleStates["ESP Health Color"] and char:FindFirstChildOfClass("Humanoid") then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                local pct = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                e.hl.FillColor = Color3.fromRGB(255 * (1 - pct), 255 * pct, 50)
+                e.hl.OutlineColor = Color3.fromRGB(255 * (1 - pct), 255 * pct, 80)
+            end
+        else e.bb.Enabled = false; e.hl.Enabled = false end
+    end
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if espCache[p] then espCache[p].folder:Destroy(); espCache[p] = nil end
+end)
+
+-- FPS
+local fpsAccum, fpsCount = 0, 0
+RunService.RenderStepped:Connect(function(dt)
+    if toggleStates["Show FPS"] then
+        fpsAccum = fpsAccum + dt
+        fpsCount = fpsCount + 1
+        if fpsAccum >= 1 then
+            local fps = math.floor(fpsCount / fpsAccum)
+            WindUI:Notify({ Title = "FPS", Content = tostring(fps) .. " fps", Icon = "activity", Duration = 1 })
+            fpsAccum = 0; fpsCount = 0
+        end
+    end
+end)
+
+-- Respawn handler
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if flying then
+        stopFly()
+        if toggleStates["Fly"] then task.wait(0.5); startFly() end
+    end
+end)
+
+notify("ShadowHub Loaded", "All features ready. Use the sidebar to navigate.", "check-circle", 4)
